@@ -3,9 +3,11 @@
 #include <string.h>
 #include <signal.h>
 #include <assert.h>
+#include <stdbool.h>
 #include <event2/buffer.h>
 #include <event2/event.h>
 #include <event2/http.h>
+#include <event2/keyvalq_struct.h>
 #include <del.h>
 #include "html.h"
 
@@ -74,22 +76,54 @@ static void homepage(struct evhttp_request *req, void *ctx)
     evbuffer_free(reply);
 }
 
+#define MAX_FORM_QUERY_STRING 1000
+char body[MAX_FORM_QUERY_STRING];
+
 static void form(struct evhttp_request *req, void *ctx)
 {
     IGNORE(ctx);
     struct evbuffer *reply = evbuffer_new();
     enum evhttp_cmd_type req_type = evhttp_request_get_command(req);
     if (req_type == EVHTTP_REQ_POST) {
-    } else { // Default to GET request
-        const struct evhttp_uri *uri = evhttp_request_get_evhttp_uri(req);
+        // Get body
+        struct evbuffer *buf = evhttp_request_get_input_buffer(req);
+        memset(body, 0, MAX_FORM_QUERY_STRING-1);
+        ev_ssize_t readlen = evbuffer_copyout(buf, body, MAX_FORM_QUERY_STRING-1);
+        printf("readlen %d\n", (int) readlen);
+        printf("MAX-1 %d\n", MAX_FORM_QUERY_STRING-1);
+        if (readlen == -1 || readlen == MAX_FORM_QUERY_STRING-1) {
+            evhttp_send_reply(req, HTTP_INTERNAL, NULL, reply);
+            goto exit;
+        }
+        printf("body: %s\n", body);
+
+        // Read parameters from body
+        struct evkeyvalq params;
+        if (evhttp_parse_query_str(body, &params) == -1) {
+            goto exit;
+        }
+        const char *firstname = evhttp_find_header(&params, "fname");
+        const char *lastname = evhttp_find_header(&params, "lname");
+        const char *yesNo = evhttp_find_header(&params, "yesNo");
+
+        // Respond
+        evbuffer_add_printf(reply, html_form_response, firstname, lastname, yesNo);
+        evhttp_send_reply(req, HTTP_OK, NULL, reply);
+        evhttp_clear_headers(&params);
+        goto exit;
+    } else if (req_type == EVHTTP_REQ_GET) { // Default to GET request
         evbuffer_add_printf(reply, html_form);
         evhttp_send_reply(req, HTTP_OK, NULL, reply);
+        goto exit;
     }
+    evhttp_send_reply(req, HTTP_BADREQUEST, NULL, reply);
+exit:
     evbuffer_free(reply);
 }
 
 static void signal_cb(evutil_socket_t fd, short event, void *arg)
 {
+    IGNORE(event);
     printf("%s signal received\n", strsignal(fd));
     event_base_loopbreak(arg);
 }
