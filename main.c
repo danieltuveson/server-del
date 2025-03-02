@@ -13,51 +13,54 @@
 
 #define VM_COUNT 100
 
-// Example del program
-int run_scripts(int argc, char *argv[])
+struct DelBuffer {
+    int max_length;
+    int length;
+    char *buffer;
+    char *output;
+};
+
+struct DelContext {
+    struct DelBuffer dbuffer;
+    DelVM vm;
+};
+
+#define DEL_BUFFER_SIZE 1000
+#define IGNORE(ignored) (void)ignored
+
+union DelForeignValue write_char(union DelForeignValue *arguments, void *context)
 {
-    // if (argc != 2) {
-    if (argc < 2) {
-        printf("Error: expecting input file\nExample usage:\n"
-                "./server hello_world.del\n");
-        return EXIT_FAILURE;
+    char byte = arguments[0].byte;
+    struct DelBuffer *dbuffer = (struct DelBuffer *) context;
+    // Don't want to overflow if too many chars written
+    if (dbuffer->length < dbuffer->max_length - 1) {
+        dbuffer->buffer[dbuffer->length] = byte;
+        dbuffer->length++;
     }
-    // DelInstructions instructions_array[VM_COUNT];
-    // DelVM vm_array[VM_COUNT];
+    DEL_NORETURN();
+}
 
-    for (int i = 1; i < argc; i++) {
-        // Compile
-        DelAllocator allocator = del_allocator_new();
-        DelInstructions instructions = del_read_and_compile(allocator, argv[i]);
-        if (!instructions) {
-            del_allocator_freeall(allocator);
-            printf("An error occurred during compilation\n");
-            return EXIT_FAILURE;
-        }
-        del_allocator_freeall(allocator);
-        // instruction_array[i] = instructions;
+union DelForeignValue get_charbuffer_size(union DelForeignValue *arguments, void *context)
+{
+    IGNORE(arguments);
+    IGNORE(context);
+    union DelForeignValue del_buffer_size;
+    del_buffer_size.integer = DEL_BUFFER_SIZE;
+    return del_buffer_size;
+}
 
-        // Init VMs
-        DelVM vm;
-        del_vm_init(&vm, instructions);
-
-        // Run
-        del_vm_execute(vm);
-        if (del_vm_status(vm) == VM_STATUS_ERROR) {
-            del_vm_free(vm);
-            del_instructions_free(instructions);
-            return EXIT_FAILURE;
-        }
-        del_vm_free(vm);
-        del_instructions_free(instructions);
-    }
-
-    return EXIT_SUCCESS;
+union DelForeignValue flush_chars(union DelForeignValue *arguments, void *context)
+{
+    IGNORE(arguments);
+    struct DelBuffer *dbuffer = (struct DelBuffer *) context;
+    memset(dbuffer->output, 0, DEL_BUFFER_SIZE);
+    memcpy(dbuffer->output, dbuffer->buffer, DEL_BUFFER_SIZE);
+    memset(dbuffer->buffer, 0, DEL_BUFFER_SIZE);
+    dbuffer->length = 0;
+    DEL_NORETURN();
 }
 
 // libevent helpers
-#define IGNORE(ctx) (void)ctx
-
 static void generic_request_handler(struct evhttp_request *req, void *ctx)
 {
     IGNORE(ctx);
@@ -69,9 +72,20 @@ static void generic_request_handler(struct evhttp_request *req, void *ctx)
 
 static void homepage(struct evhttp_request *req, void *ctx)
 {
-    IGNORE(ctx);
+    // IGNORE(ctx);
+    struct DelContext *dc = (struct DelContext *) ctx;
+    enum DelVirtualMachineStatus status = del_vm_status(dc->vm);
+    if (status != DEL_VM_STATUS_COMPLETED && status != DEL_VM_STATUS_ERROR) {
+        del_vm_execute(dc->vm);
+    }
     struct evbuffer *reply = evbuffer_new();
-    evbuffer_add_printf(reply, html_homepage);
+    status = del_vm_status(dc->vm);
+    if (status == DEL_VM_STATUS_YIELD) {
+        evbuffer_add_printf(reply, dc->dbuffer.output);
+    } else {
+        evbuffer_add_printf(reply, html_500);
+        // evbuffer_add_printf(reply, html_homepage);
+    }
     evhttp_send_reply(req, HTTP_OK, NULL, reply);
     evbuffer_free(reply);
 }
@@ -132,11 +146,47 @@ static void signal_cb(evutil_socket_t fd, short event, void *arg)
 // Can use this for setup functions that we expect to succeed before continuing
 #define SETUP_SUCCESS(ev_setup_call) assert(ev_setup_call == 0)
 
-int main(int argc, char *argv[])
+// int main(int argc, char *argv[])
+int main(void)
 {
-    if (run_scripts(argc, argv) == EXIT_FAILURE) {
+    char buffer[DEL_BUFFER_SIZE];
+    memset(buffer, 0, DEL_BUFFER_SIZE);
+
+    char output[DEL_BUFFER_SIZE];
+    memset(output, 0, DEL_BUFFER_SIZE);
+
+    struct DelBuffer dbuffer;
+    dbuffer.max_length = DEL_BUFFER_SIZE;
+    dbuffer.length = 0;
+    dbuffer.buffer = buffer;
+    dbuffer.output = output;
+
+    // Compile
+    DelCompiler compiler;
+    del_compiler_init(&compiler, stderr);
+    del_register_function(compiler, NULL, get_charbuffer_size, DEL_INT);
+    del_register_function(compiler, &dbuffer, write_char, DEL_UNDEFINED, DEL_BYTE);
+    del_register_yielding_function(compiler, &dbuffer, flush_chars, DEL_UNDEFINED);
+
+    // flush_chars
+    DelProgram program = del_compile_file(compiler, "example.del");
+    if (!program) {
+        del_compiler_free(compiler);
+        printf("An error occurred during compilation\n");
         return EXIT_FAILURE;
     }
+    del_compiler_free(compiler);
+    // instruction_array[i] = instructions;
+
+    // Init VMs
+    DelVM vm;
+    del_vm_init(&vm, stdout, stderr, program);
+
+    struct DelContext dc = { dbuffer, vm };
+
+    // if (run_scripts(argc, argv) == EXIT_FAILURE) {
+    //     return EXIT_FAILURE;
+    // }
     ev_uint16_t http_port = 8080;
     char *http_addr = "0.0.0.0";
     struct event_base *base;
@@ -148,7 +198,7 @@ int main(int argc, char *argv[])
     http_server = evhttp_new(base);
     evhttp_set_allowed_methods(http_server, EVHTTP_REQ_GET|EVHTTP_REQ_POST);
     SETUP_SUCCESS(evhttp_bind_socket(http_server, http_addr, http_port));
-    SETUP_SUCCESS(evhttp_set_cb(http_server, "/", homepage, NULL));
+    SETUP_SUCCESS(evhttp_set_cb(http_server, "/", homepage, &dc));
     SETUP_SUCCESS(evhttp_set_cb(http_server, "/form", form, NULL));
     evhttp_set_gencb(http_server, generic_request_handler, NULL);
 
@@ -159,6 +209,8 @@ int main(int argc, char *argv[])
 
     event_base_dispatch(base);
 
+    del_program_free(program);
+    del_vm_free(vm);
     evhttp_free(http_server);
     event_free(sig_int);
     event_base_free(base);

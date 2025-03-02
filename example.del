@@ -1,4 +1,354 @@
+function metadata() : Array<Question> {
+    return [
+        new Question(
+            "hello_world",
+            "Did this work?",
+            [
+                new Category("yes", "Yes"),
+                new Category("no", "No")
+            ]
+        ),
+        new Question(
+            "fav_pasta",
+            "What is your favorite pasta-based dish?",
+            [
+                new Category("mac", "Mac and cheese"),
+                new Category("spag_meatbol", "Spaghetti and meatballs"),
+                new Category("lomein", "Vegetable lo mein"),
+                new Category("lasagna", "Lasagna"),
+                new Category("other", "Other")
+            ]
+        ),
+        new Question(
+            "apologize",
+            "There are no other types of pasta-based dishes, you liar",
+            [
+                new Category("sorry", "I'm sorry that I lied")
+            ]
+        )
+    ];
+}
+
+function routing(questions : Array<Question>) {
+    let hello_world = setup_question(questions, "hello_world");
+    let fav_pasta   = setup_question(questions, "fav_pasta");
+    let apologize   = setup_question(questions, "apologize");
+    ask(hello_world);
+}
+
+class RoutingQuestion {
+    question : Question;
+    response : string;
+}
+
+function setup_question(questions : Array<Question>, qname : string) : RoutingQuestion {
+    let question : Question;
+    for let i = 0; i < questions.length; i++ {
+        if questions[i].name == qname {
+            question = questions[i];
+        }
+    }
+    if question == null {
+        println("Error asking question: '", qname, "' does not exist");
+        // TODO: Exit with error code
+    }
+    return new RoutingQuestion(question, "");
+}
+
+function ask(rq : RoutingQuestion) {
+    let q = rq.question;
+    let html = question_to_html(q);
+    while (true) {
+        let sb = tag_to_sb(html);
+        println(to_chars(sb));
+        write_string_builder(sb);
+        clear(sb);
+    }
+}
 
 function main() {
-    println("hello from del");
+    let questions = metadata();
+    routing(questions);
+    println("finished, exiting VM");
+}
+
+// *********************************************************
+// ************* Question Related Functions ****************
+// *********************************************************
+class Question {
+    name : string;
+    label : string;
+    categories : Array<Category>;
+}
+
+class Category {
+    name : string;
+    label : string;
+}
+
+function question_to_html(question : Question) : Html {
+    // Form
+    let attrs = [
+        new Attr("action", "/form"::Array<byte>),
+        new Attr("method", "POST"::Array<byte>)
+    ];
+    let form = new_tag("form", attrs);
+    let fieldset = new_tag("fieldset", null);
+    append_tag(form, fieldset);
+
+    // Question text
+    let legend = new_tag("legend", null);
+    append_html_text(legend, question.label::Array<byte>);
+    append_tag(fieldset, legend);
+
+    // Categories
+    add_categories_as_html(fieldset, question);
+
+    // Next button
+    let next_attrs = [
+        new Attr("type", "submit"::Array<byte>),
+        new Attr("value", "Next"::Array<byte>)
+    ];
+    append_tag(fieldset, new_tag("input", next_attrs));
+
+    return form;
+}
+
+function add_categories_as_html(fieldset : Html, question : Question) {
+    for let i = 0; i < question.categories.length; i++ {
+        let category = question.categories[i];
+        let cat_name = category.name::Array<byte>;
+        // div
+        let div = new_tag("div", null);
+        append_tag(fieldset, div);
+        // input
+        let input_attrs = [
+            new Attr("type", "radio"::Array<byte>),
+            new Attr("id", cat_name),
+            new Attr("name", question.name::Array<byte>),
+            new Attr("value", cat_name)
+        ];
+        append_tag(div, new_tag("input", input_attrs));
+        // label
+        let label_attrs = [ new Attr("for", cat_name) ];
+        let label = new_tag("label", label_attrs);
+        append_html_text(label, category.label::Array<byte>);
+        append_tag(div, label);
+    }
+}
+
+// *********************************************************
+// **************** HTML Related Functions *****************
+// *********************************************************
+class Attr {
+    name : string;
+    value : Array<byte>;
+}
+
+class Html {
+    name : string;
+    attributes : Array<Attr>;
+    child_count : int;
+    inner_html : Array<InnerHtml>;
+}
+
+class InnerHtml {
+    is_tag : bool; // true if tag, false if text
+    tag : Html;
+    chars : Array<byte>;
+}
+
+function new_tag(name : string, attrs : Array<Attr>) : Html {
+    let inner = new Array<InnerHtml>(2);
+    return new Html(name, attrs, 0, inner);
+}
+
+function new_self_closing_tag(name : string, attrs : Array<Attr>) : Html {
+    return new Html(name, attrs, 0, null);
+}
+
+function append_html_text(tag : Html, chars : Array<byte>) {
+    if tag.child_count == tag.inner_html.length {
+        grow_html(tag);
+    }
+    tag.inner_html[tag.child_count] = new InnerHtml(false, null, chars);
+    tag.child_count = tag.child_count + 1;
+}
+
+function append_tag(tag : Html, inner_tag : Html) {
+    if tag.child_count == tag.inner_html.length {
+        grow_html(tag);
+    }
+    tag.inner_html[tag.child_count] = new InnerHtml(true, inner_tag, null);
+    tag.child_count = tag.child_count + 1;
+}
+
+function grow_html(tag : Html) {
+    let arr = new Array<InnerHtml>(2 * tag.inner_html.length);
+    for let i = 0; i < tag.inner_html.length; i++ {
+        arr[i] = tag.inner_html[i];
+    }
+    tag.inner_html = arr;
+}
+
+// *********************************************************
+// ****** HTML to StringBuilder Conversion Functions *******
+// *********************************************************
+function tag_to_sb(tag : Html) : StringBuilder {
+    let sb = string_builder();
+    tag_to_sb_helper(tag, sb);
+    return sb;
+}
+
+function is_self_closing(str : string) : bool {
+    return str == "area"  || str == "base" || str == "br"     || str == "col"
+        || str == "embed" || str == "hr"   || str == "img"    || str == "input"
+        || str == "link"  || str == "meta" || str == "source" || str == "track"
+        || str == "wbr";
+}
+
+function tag_to_sb_helper(tag : Html, sb : StringBuilder) {
+    append_char(sb, '<');
+    append_string(sb, tag.name);
+    if tag.attributes != null {
+        for let i = 0; i < tag.attributes.length; i++ {
+            append_char(sb, ' ');
+            attr_to_sb_helper(tag.attributes[i], sb);
+        }
+    }
+    append_char(sb, '>');
+    if !is_self_closing(tag.name) {
+        for let i = 0; i < tag.child_count; i++ {
+            inner_html_to_sb_helper(tag.inner_html[i], sb);
+        }
+        append_string(sb, "</");
+        append_string(sb, tag.name);
+        append_char(sb, '>');
+    }
+}
+
+function inner_html_to_sb(html : InnerHtml) : StringBuilder {
+    let sb = string_builder();
+    inner_html_to_sb_helper(html, sb);
+    return sb;
+}
+
+function inner_html_to_sb_helper(html : InnerHtml, sb : StringBuilder) {
+    if html.is_tag {
+        tag_to_sb_helper(html.tag, sb);
+        return;
+    }
+    append_chars(sb, html.chars);
+}
+
+function attr_to_sb(attr : Attr) : StringBuilder {
+    let sb = string_builder();
+    return sb;
+}
+
+function attr_to_sb_helper(attr : Attr, sb : StringBuilder) {
+    append_string(sb, attr.name);
+    append_char(sb, '=');
+    append_char(sb, '"');
+    append_chars(sb, attr.value);
+    append_char(sb, '"');
+}
+
+// *********************************************************
+// *********** StringBuilder + related functions ***********
+// *********************************************************
+class StringBuilder {
+    length : int;
+    builder : Array<byte>;
+}
+
+function string_builder() : StringBuilder {
+    let arr = new Array<byte>(8);
+    let sb = new StringBuilder(0, arr);
+    return sb;
+}
+
+function string_to_sb(str : string) : StringBuilder {
+    return chars_to_sb(str::Array<byte>);
+}
+
+function chars_to_sb(barr : Array<byte>) : StringBuilder {
+    return new StringBuilder(barr.length, barr);
+}
+
+function to_chars(sb : StringBuilder) : Array<byte> {
+    let chars = new Array<byte>(sb.length);
+    for let i = 0; i < sb.length; i++ {
+        chars[i] = sb.builder[i];
+    }
+    return chars;
+}
+
+function append_sb(sb : StringBuilder, sb2 : StringBuilder) {
+    for let i = 0; i < sb2.length; i++ {
+        append_char(sb, sb2.builder[i]);
+    }
+}
+
+function append_string(sb : StringBuilder, str : string) {
+    append_chars(sb, str::Array<byte>);
+}
+
+function append_chars(sb : StringBuilder, chars : Array<byte>) {
+    for let i = 0; i < chars.length; i++ {
+        append_char(sb, chars[i]);
+    }
+}
+
+function append_char(sb : StringBuilder, c : byte) {
+    if sb.length == sb.builder.length {
+        grow(sb);
+    }
+    sb.builder[sb.length] = c;
+    sb.length = sb.length + 1;
+}
+
+function grow(sb : StringBuilder) {
+    let new_builder = new Array<byte>(2 * sb.length);
+    for let i = 0; i < sb.builder.length; i++ {
+        new_builder[i] = sb.builder[i];
+    }
+    sb.builder = new_builder;
+}
+
+function clear(sb : StringBuilder) {
+    sb.length = 0;
+}
+
+// *********************************************************
+// ********************* FFI wrappers **********************
+// *********************************************************
+function write_string(str : string) {
+    write_bytes(str::Array<byte>);
+}
+
+function write_bytes(buff : Array<byte>) {
+    for let i = 0; i < buff.length; i++ {
+        // If our text is too long, we can yield that way text doesn't get cutt off
+        // if i % get_charbuffer_size() == {
+            // do stuff
+        // }
+        write_char(buff[i]);
+    }
+    println("yielding...");
+    flush_chars();
+    println("resuming");
+}
+
+function write_string_builder(sb : StringBuilder) {
+    for let i = 0; i < sb.length; i++ {
+        // If our text is too long, we can yield that way text doesn't get cutt off
+        // if i % get_charbuffer_size() == {
+            // do stuff
+        // }
+        write_char(sb.builder[i]);
+    }
+    println("yielding...");
+    flush_chars();
+    println("resuming");
 }

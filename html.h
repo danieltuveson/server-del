@@ -49,7 +49,7 @@
         )\
     )
 
-#define boilerplate(content) "<!DOCTYPE html>"\
+#define html_boilerplate(content) "<!DOCTYPE html>"\
     "<html>"\
     "<body>"\
     navigation\
@@ -58,9 +58,9 @@
     "</body>"\
     "</html>"
 
-const char html_homepage[] = boilerplate(h2("", "Welcome!"));
+const char html_homepage[] = html_boilerplate(h2("", "Welcome!"));
 
-const char html_form[] = boilerplate(
+const char html_form[] = html_boilerplate(
     h2("", "HTML Form")
     form(attr("action", "/form") attr("method", "POST"),
         label(attr("for", "fname"), "First name:")
@@ -90,7 +90,7 @@ const char html_form[] = boilerplate(
     )
 );
 
-const char html_form_response[] = boilerplate(
+const char html_form_response[] = html_boilerplate(
     h2("", "HTML Form Response")
     div(attr("id", "fname"), "First name: %s")
     div(attr("id", "lname"), "Last name: %s")
@@ -98,7 +98,8 @@ const char html_form_response[] = boilerplate(
 );
 
 
-const char html_404[] = boilerplate(h2("", "404 - Page Not Found"));
+const char html_404[] = html_boilerplate(h2("", "404 - Page Not Found"));
+const char html_500[] = html_boilerplate(h2("", "500 - Internal Server Error"));
 
 // undef tags
 #undef tag_self_close
@@ -128,7 +129,7 @@ const char html_404[] = boilerplate(h2("", "404 - Page Not Found"));
 #undef css
 
 // undef rest
-#undef boilerplate
+#undef html_boilerplate
 #undef navigation
 
 #endif
