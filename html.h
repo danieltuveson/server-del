@@ -1,6 +1,8 @@
 #ifndef HTML_H
 #define HTML_H
 
+#include "globals.h"
+
 /* 
  * A cursed header for defining HTML template macros
  *
@@ -17,6 +19,9 @@
 #define tag(tagname, attrs, body) tag_self_close(tagname, attrs) body "</" tagname ">"
 
 #define html(attrs, body)     tag("html", attrs, body)
+#define head(attrs, body)     tag("head", attrs, body)
+#define title(attrs, body)    tag("title", attrs, body)
+#define meta(attrs)           tag_self_close("meta", attrs)
 #define body(attrs, body)     tag("body", attrs, body)
 #define div(attrs, body)      tag("div", attrs, body)
 #define span(attrs, body)     tag("span", attrs, body)
@@ -42,21 +47,39 @@
             attr("style",\
                 css("position","sticky")\
                 css("top", "0")\
+                css("padding-right",)\
                 css("background-color", "#b1c0fc"))\
             attr("aria-label", "Main menu"),\
-            a(attr("href", "/"), "Home")\
-            a(attr("href", "/form"), "Form")\
+            a(attr("href", "/") attr("style", css("margin-left", "20px")), "Home")\
+            a(attr("href", "/new-questionnaire") attr("style", css("margin-left", "20px")),\
+                "Form")\
         )\
     )
 
 #define html_boilerplate(content) "<!DOCTYPE html>"\
-    "<html>"\
-    "<body>"\
-    navigation\
-    "<h1>Story Engine</h1>"\
-    content\
-    "</body>"\
-    "</html>"
+    html(attr("lang", "en"),\
+        head("", \
+            meta(attr("charset", "UTF-8"))\
+            meta(\
+                attr("name", "viewport")\
+                attr("content", "width=device-width, initial-scale=1.0"))\
+            meta(\
+                attr("http-equiv", "X-UA-Compatible")\
+                attr("content", "ie=edge"))\
+            meta(\
+                attr("name", "google")\
+                /* Google thinks "questionnaire" == french */\
+                attr("content", "notranslate"))\
+            title("", "Questionnaire Engine")\
+        )\
+        body("", \
+            navigation\
+            h1("", "Questionnaire Engine")\
+            content\
+        )\
+    );
+
+const char html_template[] = html_boilerplate("%s");
 
 const char html_homepage[] = html_boilerplate(h2("", "Welcome!"));
 
@@ -97,6 +120,33 @@ const char html_form_response[] = html_boilerplate(
     div(attr("id", "yes-no"), "Yes / No: %s")
 );
 
+const char html_new_questionnaire[] = html_boilerplate(
+    h2("", "New Questionnaire")
+    form(attr("action", "/new-questionnaire") attr("method", "POST"),
+        label(attr("for", "q-name"), "Questionnaire name: ")
+        input(
+            attr("type", "text")
+            attr("id", "q-name")
+            attr("name", "q-name")
+            attr("minlength", "1")
+            attr("maxlength", MAX_QUESTIONNAIRE_NAME_LENGTH_STR)
+            attr("pattern", "[A-Za-z]+\\w*")
+            attr("title", "input must begin with a letter and may only contain "
+                          "letters, numbers, and underscores")
+            attr("required", "")
+        )
+        br
+        br
+        input(attr("type", "submit") attr("value", "Create"))
+    )
+);
+
+const char html_new_questionnaire_response[] = html_boilerplate(
+    h2("", "New questionnaire created")
+    div(attr("id", "q-name"), "Questionnaire name: %s")
+    div(attr("id", "q-id"), "Questionnaire ID: %s")
+);
+
 
 const char html_404[] = html_boilerplate(h2("", "404 - Page Not Found"));
 const char html_500[] = html_boilerplate(h2("", "500 - Internal Server Error"));
@@ -105,6 +155,9 @@ const char html_500[] = html_boilerplate(h2("", "500 - Internal Server Error"));
 #undef tag_self_close
 #undef tag
 #undef html
+#undef head
+#undef title
+#undef meta
 #undef body
 #undef div
 #undef span
