@@ -1,0 +1,10 @@
+function routing(questions : Array<Question>) {
+    let hello_world = setup_question(questions, "hello_world");
+    let fav_pasta   = setup_question(questions, "fav_pasta");
+    let apologize   = setup_question(questions, "apologize");
+    ask(hello_world);
+    if contains(hello_world.response, ["yes"]) {
+        println("we're cookin!");
+    }
+}
+

@@ -1,0 +1,31 @@
+function metadata() : Array<Question> {
+    return [
+        new Question(
+            "hello_world",
+            "Did this work?",
+            [
+                new Category("yes", "Yes"),
+                new Category("no", "No")
+            ]
+        ),
+        new Question(
+            "fav_pasta",
+            "What is your favorite pasta-based dish?",
+            [
+                new Category("mac", "Mac and cheese"),
+                new Category("spag_meatbol", "Spaghetti and meatballs"),
+                new Category("lomein", "Vegetable lo mein"),
+                new Category("lasagna", "Lasagna"),
+                new Category("other", "Other")
+            ]
+        ),
+        new Question(
+            "apologize",
+            "There are no other types of pasta-based dishes, you liar",
+            [
+                new Category("sorry", "I'm sorry that I lied")
+            ]
+        )
+    ];
+}
+
